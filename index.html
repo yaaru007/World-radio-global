@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07111f">
+  <title>World Radio Globe — Tune in anywhere</title>
+  <meta name="description" content="Explore and listen to working HTTPS radio stations from around the world on an interactive 3D globe.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/globe.gl"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { color-scheme: dark; font-family: "DM Sans", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; background: #07111f; color: #e7eefb; }
+    .display { font-family: "Space Grotesk", sans-serif; }
+    .glass { background: rgba(13, 25, 43, .82); backdrop-filter: blur(18px); }
+    .station-scroll { scrollbar-width: thin; scrollbar-color: #34445b transparent; }
+    .station-scroll::-webkit-scrollbar { width: 5px; }
+    .station-scroll::-webkit-scrollbar-thumb { background: #34445b; border-radius: 6px; }
+    .station-card { transition: background .18s ease, border-color .18s ease, transform .18s ease; }
+    .station-card:hover { transform: translateY(-1px); }
+    .range { accent-color: #7ce6c2; }
+    #globeViz canvas { outline: none; }
+    @media (max-width: 767px) {
+      #globeViz { height: 45vh !important; min-height: 290px; }
+      .mobile-sidebar { max-height: 46vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="min-h-screen flex flex-col">
+    <header class="relative z-10 flex items-center justify-between border-b border-white/10 px-4 py-3 md:px-7">
+      <a href="#" class="flex items-center gap-3" aria-label="World Radio Globe home">
+        <span class="grid h-10 w-10 place-items-center rounded-2xl bg-emerald-300/10 text-emerald-200">
+          <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.8 9h16.4M3.8 15h16.4M12 3.5c2.2 2.3 3.3 5.1 3.3 8.5s-1.1 6.2-3.3 8.5C9.8 18.2 8.7 15.4 8.7 12S9.8 5.8 12 3.5Z"/><path d="M17.5 4.5 21 2m-2.2 5.4 4-.5"/></svg>
+        </span>
+        <span><span class="display block text-base font-semibold tracking-tight">WORLD RADIO <span class="text-emerald-300">GLOBE</span></span><span class="hidden text-[10px] tracking-[.2em] text-slate-400 sm:block">SOUNDS WITHOUT BORDERS</span></span>
+      </a>
+      <div class="flex items-center gap-2 text-xs text-slate-400">
+        <span class="relative flex h-2.5 w-2.5"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-40"></span><span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300"></span></span>
+        <span id="headerStatus">Connecting to the airwaves</span>
+      </div>
+    </header>
+
+    <main class="flex min-h-0 flex-1 flex-col md:flex-row">
+      <aside class="mobile-sidebar glass z-10 flex w-full flex-col border-b border-white/10 md:w-[370px] md:shrink-0 md:border-b-0 md:border-r">
+        <div class="border-b border-white/10 px-4 py-4 md:px-5">
+          <div class="mb-4 flex items-end justify-between">
+            <div>
+              <p class="mb-1 text-[10px] font-semibold tracking-[.2em] text-emerald-300">DISCOVER</p>
+              <h1 class="display text-xl font-semibold">Find your frequency</h1>
+            </div>
+            <span id="stationCount" class="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-slate-400">— stations</span>
+          </div>
+          <label class="relative block">
+            <svg class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
+            <input id="searchInput" type="search" autocomplete="off" placeholder="Search stations or genres..." class="w-full rounded-xl border border-white/10 bg-[#07111f] py-3 pl-10 pr-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-emerald-300/50">
+          </label>
+          <div class="mt-3 flex gap-2">
+            <label class="min-w-0 flex-1">
+              <span class="sr-only">Filter by country</span>
+              <select id="countrySelect" class="w-full rounded-lg border border-white/10 bg-[#101c2d] px-3 py-2.5 text-xs text-slate-300 outline-none focus:border-emerald-300/50">
+                <option value="">All countries</option>
+              </select>
+            </label>
+            <button id="tamilToggle" type="button" aria-pressed="false" class="shrink-0 rounded-lg border border-white/10 bg-[#101c2d] px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-emerald-300/40" title="Show Tamil-language stations">தமிழ் Tamil</button>
+            <button id="favoritesToggle" type="button" aria-pressed="false" class="shrink-0 rounded-lg border border-white/10 bg-[#101c2d] px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-emerald-300/40" title="Show favorites only">♥</button>
+          </div>
+        </div>
+        <div id="stationList" class="station-scroll min-h-0 flex-1 overflow-y-auto p-3 md:p-4" aria-live="polite">
+          <div class="grid min-h-36 place-items-center text-center text-sm text-slate-500"><span>Finding stations around the world…</span></div>
+        </div>
+        <div class="border-t border-white/10 px-4 py-2.5 text-[10px] text-slate-500 md:px-5">
+          Only working, verified HTTPS streams are shown.
+        </div>
+      </aside>
+
+      <section class="relative min-h-[310px] flex-1 overflow-hidden bg-[#07111f] md:min-h-0" aria-label="Interactive radio globe">
+        <div class="pointer-events-none absolute left-4 top-4 z-[1] md:left-7 md:top-6">
+          <p class="text-[10px] font-semibold tracking-[.22em] text-emerald-300">LIVE FROM EVERYWHERE</p>
+          <p class="display mt-1 text-sm text-white/80">Drag to explore · Select a station to listen</p>
+        </div>
+        <div id="globeViz" class="absolute inset-0"></div>
+        <div class="pointer-events-none absolute bottom-5 left-1/2 z-[1] -translate-x-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[#07111f]/70 px-4 py-2 text-[10px] tracking-wide text-slate-400 backdrop-blur-md">
+          <span class="mr-2 inline-block h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_10px_#7ce6c2]"></span> VERIFIED HTTPS STATIONS
+        </div>
+      </section>
+    </main>
+
+    <footer class="glass z-20 border-t border-white/10 px-4 py-3 md:px-7">
+      <div class="mx-auto flex max-w-[1600px] items-center gap-3 md:gap-5">
+        <div class="flex min-w-0 flex-1 items-center gap-3 md:w-[30%] md:flex-none">
+          <div id="playerArtwork" class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-emerald-300/20 to-cyan-400/10 text-emerald-200">
+            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10v4m4-8v12m4-16v20m4-15v10m4-7v4"/></svg>
+          </div>
+          <div class="min-w-0">
+            <p id="playerTitle" class="truncate text-sm font-semibold text-slate-200">Choose a station</p>
+            <p id="playerSubtitle" class="truncate text-xs text-slate-500">The world is on the air</p>
+          </div>
+          <button id="playerFavorite" type="button" class="hidden rounded-full p-2 text-slate-500 hover:text-pink-300" aria-label="Add current station to favorites" title="Add to favorites">♥</button>
+        </div>
+        <div class="flex flex-1 items-center justify-center gap-3 md:gap-5">
+          <button id="playButton" type="button" aria-label="Play" class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-emerald-300 text-[#07111f] transition hover:scale-105 hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-40">
+            <svg id="playIcon" viewBox="0 0 24 24" class="ml-0.5 h-4 w-4" fill="currentColor" aria-hidden="true"><path d="M7 4.8v14.4a.8.8 0 0 0 1.2.7l11-7.2a.8.8 0 0 0 0-1.4l-11-7.2a.8.8 0 0 0-1.2.7Z"/></svg>
+          </button>
+          <div class="hidden min-w-0 flex-1 md:block">
+            <div class="mb-1 flex items-center justify-between text-[10px] text-slate-500"><span id="playbackStatus">READY TO TUNE IN</span><span id="volumeLabel">70%</span></div>
+            <input id="volume" class="range h-1 w-full cursor-pointer" type="range" min="0" max="1" step="0.01" value="0.7" aria-label="Volume">
+          </div>
+        </div>
+        <div class="hidden w-[30%] justify-end md:flex">
+          <span class="flex items-center gap-2 text-[10px] tracking-wider text-slate-500"><span class="h-1.5 w-1.5 rounded-full bg-emerald-300"></span> WORLDWIDE RADIO</span>
+        </div>
+      </div>
+      <audio id="audio" preload="none" crossorigin="anonymous"></audio>
+    </footer>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+      const API = "https://de1.api.radio-browser.info/json/stations/search";
+      const listElement = document.getElementById("stationList");
+      const searchInput = document.getElementById("searchInput");
+      const countrySelect = document.getElementById("countrySelect");
+      const tamilToggle = document.getElementById("tamilToggle");
+      const favoritesToggle = document.getElementById("favoritesToggle");
+      const audio = document.getElementById("audio");
+      const playButton = document.getElementById("playButton");
+      const playIcon = document.getElementById("playIcon");
+      const stationMap = new Map();
+      const favorites = new Set(loadFavorites());
+      let allStations = [];
+      let currentStation = null;
+      let hls = null;
+      let tamilOnly = false;
+      let favoritesOnly = false;
+      let searchTimer = null;
+      let requestSequence = 0;
+      let globe = null;
+      const countryCenters = {
+        "United States": [39.8, -98.6], "United Kingdom": [54.5, -3], "Canada": [56.1, -106.3],
+        "Australia": [-25.3, 133.8], "India": [21, 78], "Germany": [51.2, 10.4],
+        "France": [46.2, 2.2], "Italy": [41.9, 12.6], "Spain": [40.4, -3.7],
+        "Brazil": [-10.8, -52.9], "Japan": [36.2, 138.3], "China": [35.9, 104.2],
+        "Mexico": [23.6, -102.5], "South Africa": [-30.6, 22.9], "New Zealand": [-40.9, 174.9],
+        "Netherlands": [52.1, 5.3], "Sweden": [60.1, 18.6], "Norway": [60.5, 8.5],
+        "Ireland": [53.1, -8], "Russia": [61.5, 105.3], "Argentina": [-38.4, -63.6],
+        "Sri Lanka": [7.9, 80.8], "Malaysia": [4.2, 102], "Singapore": [1.35, 103.8],
+        "Philippines": [12.9, 121.8], "Pakistan": [30.4, 69.3], "Bangladesh": [23.7, 90.4],
+        "United Arab Emirates": [24, 54], "Turkey": [38.9, 35.2], "Ukraine": [48.4, 31.2],
+        "Poland": [51.9, 19.1], "Switzerland": [46.8, 8.2], "Austria": [47.5, 14.6],
+        "Belgium": [50.5, 4.5], "Greece": [39.1, 21.8], "Portugal": [39.4, -8.2],
+        "South Korea": [36.5, 127.9], "Thailand": [15.9, 100.9], "Indonesia": [-2.5, 118]
+      };
+
+      function loadFavorites() {
+        try {
+          const value = JSON.parse(localStorage.getItem("world-radio-favorites") || "[]");
+          return Array.isArray(value) ? value.filter(v => typeof v === "string") : [];
+        } catch (error) {
+          console.warn("Could not read saved favorites.", error);
+          return [];
+        }
+      }
+
+      function saveFavorites() {
+        try {
+          localStorage.setItem("world-radio-favorites", JSON.stringify([...favorites]));
+        } catch (error) {
+          setStatus("Favorites could not be saved in this browser.");
+          console.error("Could not save favorites.", error);
+        }
+      }
+
+      function stationId(station) {
+        return station.stationuuid || station.url_resolved;
+      }
+
+      function isVerifiedHttps(station) {
+        return station.lastcheckok === 1 && station.ssl_error === 0 &&
+          typeof station.url_resolved === "string" && station.url_resolved.startsWith("https://");
+      }
+
+      function setStatus(message, isError = false) {
+        document.getElementById("playbackStatus").textContent = message;
+        document.getElementById("playbackStatus").className = `mb-1 text-[10px] ${isError ? "text-rose-300" : "text-slate-500"}`;
+      }
+
+      function stationCountry(station) {
+        return station.country || "Unknown country";
+      }
+
+      function updateCountryOptions() {
+        const selected = countrySelect.value;
+        const countries = [...new Set(allStations.map(stationCountry).filter(country => country !== "Unknown country"))]
+          .sort((a, b) => a.localeCompare(b));
+        countrySelect.innerHTML = '<option value="">All countries</option>';
+        countries.forEach(country => {
+          const option = document.createElement("option");
+          option.value = country;
+          option.textContent = country;
+          countrySelect.append(option);
+        });
+        if (countries.includes(selected)) countrySelect.value = selected;
+      }
+
+      function filteredStations() {
+        const query = searchInput.value.trim().toLocaleLowerCase();
+        return allStations.filter(station => {
+          if (!isVerifiedHttps(station)) return false;
+          if (favoritesOnly && !favorites.has(stationId(station))) return false;
+          if (countrySelect.value && stationCountry(station) !== countrySelect.value) return false;
+          if (tamilOnly && !`${station.language || ""} ${station.tags || ""}`.toLocaleLowerCase().includes("tamil")) return false;
+          if (query && !`${station.name || ""} ${station.country || ""} ${station.language || ""} ${station.tags || ""}`.toLocaleLowerCase().includes(query)) return false;
+          return true;
+        });
+      }
+
+      function makeStationCard(station) {
+        const id = stationId(station);
+        const active = currentStation && stationId(currentStation) === id;
+        const card = document.createElement("article");
+        card.className = `station-card group flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${active ? "border-emerald-300/35 bg-emerald-300/[.08]" : "border-white/[.06] bg-white/[.025] hover:border-white/15 hover:bg-white/[.05]"}`;
+        card.tabIndex = 0;
+        card.setAttribute("role", "button");
+        card.setAttribute("aria-label", `Play ${station.name || "unnamed station"}, ${stationCountry(station)}`);
+        const image = document.createElement("div");
+        image.className = "grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-800 text-sm font-semibold text-emerald-200";
+        const fallback = document.createElement("span");
+        fallback.textContent = (station.name || "R").slice(0, 1).toUpperCase();
+        image.append(fallback);
+        if (station.favicon && station.favicon.startsWith("https://")) {
+          const img = document.createElement("img");
+          img.src = station.favicon;
+          img.alt = "";
+          img.loading = "lazy";
+          img.className = "h-full w-full object-cover";
+          img.onerror = () => img.remove();
+          image.append(img);
+        }
+        const details = document.createElement("div");
+        details.className = "min-w-0 flex-1";
+        const title = document.createElement("p");
+        title.className = "truncate text-[13px] font-semibold text-slate-200";
+        title.textContent = station.name || "Unnamed station";
+        const subtitle = document.createElement("p");
+        subtitle.className = "mt-1 truncate text-[11px] text-slate-500";
+        subtitle.textContent = [stationCountry(station), (station.tags || "").split(",").slice(0, 2).join(" · ")].filter(Boolean).join(" · ");
+        details.append(title, subtitle);
+        const favorite = document.createElement("button");
+        favorite.type = "button";
+        favorite.className = `rounded-md px-2 py-1 text-lg leading-none transition ${favorites.has(id) ? "text-pink-300" : "text-slate-600 opacity-0 group-hover:opacity-100 hover:text-pink-300"}`;
+        favorite.textContent = favorites.has(id) ? "♥" : "♡";
+        favorite.title = favorites.has(id) ? "Remove from favorites" : "Add to favorites";
+        favorite.setAttribute("aria-label", favorite.title);
+        favorite.addEventListener("click", event => {
+          event.stopPropagation();
+          toggleFavorite(station);
+        });
+        card.append(image, details, favorite);
+        card.addEventListener("click", () => playStation(station));
+        card.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            playStation(station);
+          }
+        });
+        return card;
+      }
+
+      function renderStations() {
+        const stations = filteredStations();
+        document.getElementById("stationCount").textContent = `${stations.length.toLocaleString()} stations`;
+        listElement.replaceChildren();
+        if (!stations.length) {
+          const empty = document.createElement("div");
+          empty.className = "grid min-h-36 place-items-center px-5 text-center text-sm text-slate-500";
+          empty.textContent = allStations.length ? "No verified stations match these filters." : "No verified stations are available right now.";
+          listElement.append(empty);
+          return;
+        }
+        const fragment = document.createDocumentFragment();
+        stations.slice(0, 250).forEach(station => fragment.append(makeStationCard(station)));
+        listElement.append(fragment);
+        if (stations.length > 250) {
+          const note = document.createElement("p");
+          note.className = "px-2 py-3 text-center text-xs text-slate-500";
+          note.textContent = "Refine your search to see more stations.";
+          listElement.append(note);
+        }
+      }
+
+      function updateGlobe() {
+        if (!globe) return;
+        const points = allStations.map(station => {
+          let lat = Number(station.geo_lat);
+          let lng = Number(station.geo_long);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
+            const center = countryCenters[station.country];
+            if (!center) return null;
+            [lat, lng] = center;
+          }
+          return { lat, lng, station };
+        }).filter(Boolean);
+        globe.pointsData(points)
+          .pointLat("lat")
+          .pointLng("lng")
+          .pointAltitude(point => currentStation && stationId(currentStation) === stationId(point.station) ? 0.12 : 0.045)
+          .pointRadius(point => currentStation && stationId(currentStation) === stationId(point.station) ? 0.48 : 0.28)
+          .pointColor(point => currentStation && stationId(currentStation) === stationId(point.station) ? "#ffffff" : "#7ce6c2")
+          .pointLabel(point => `<div style="font:12px sans-serif;color:#e7eefb;background:#0b1728;padding:8px 10px;border:1px solid #26384d;border-radius:8px">${escapeHtml(point.station.name || "Radio station")}<br><span style="color:#9aa8bb">${escapeHtml(stationCountry(point.station))}</span></div>`)
+          .onPointClick(point => playStation(point.station));
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+      }
+
+      function toggleFavorite(station) {
+        const id = stationId(station);
+        if (favorites.has(id)) favorites.delete(id);
+        else favorites.add(id);
+        saveFavorites();
+        document.getElementById("playerFavorite").textContent = favorites.has(id) ? "♥" : "♡";
+        document.getElementById("playerFavorite").className = `rounded-full p-2 ${favorites.has(id) ? "text-pink-300" : "text-slate-500 hover:text-pink-300"}`;
+        document.getElementById("playerFavorite").setAttribute("aria-label", favorites.has(id) ? "Remove current station from favorites" : "Add current station to favorites");
+        renderStations();
+      }
+
+      function setPlaying(playing) {
+        playIcon.innerHTML = playing
+          ? '<path d="M6 5.5A1.5 1.5 0 0 1 7.5 4h1A1.5 1.5 0 0 1 10 5.5v13A1.5 1.5 0 0 1 8.5 20h-1A1.5 1.5 0 0 1 6 18.5Zm8 0A1.5 1.5 0 0 1 15.5 4h1A1.5 1.5 0 0 1 18 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5Z"/>'
+          : '<path d="M7 4.8v14.4a.8.8 0 0 0 1.2.7l11-7.2a.8.8 0 0 0 0-1.4l-11-7.2a.8.8 0 0 0-1.2.7Z"/>';
+        playButton.setAttribute("aria-label", playing ? "Pause" : "Play");
+      }
+
+      async function playStation(station) {
+        if (!isVerifiedHttps(station)) {
+          setStatus("This station does not meet the verified HTTPS requirements.", true);
+          return;
+        }
+        currentStation = station;
+        document.getElementById("playerTitle").textContent = station.name || "Unnamed station";
+        document.getElementById("playerSubtitle").textContent = `${stationCountry(station)}${station.language ? ` · ${station.language}` : ""}`;
+        const favoriteButton = document.getElementById("playerFavorite");
+        favoriteButton.classList.remove("hidden");
+        favoriteButton.textContent = favorites.has(stationId(station)) ? "♥" : "♡";
+        favoriteButton.className = `rounded-full p-2 ${favorites.has(stationId(station)) ? "text-pink-300" : "text-slate-500 hover:text-pink-300"}`;
+        favoriteButton.setAttribute("aria-label", favorites.has(stationId(station)) ? "Remove current station from favorites" : "Add current station to favorites");
+        favoriteButton.onclick = () => toggleFavorite(station);
+        renderStations();
+        updateGlobe();
+        setStatus("CONNECTING TO STATION");
+        if (hls) {
+          hls.destroy();
+          hls = null;
+        }
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+        const url = station.url_resolved;
+        const isHls = /\.m3u8(?:$|[?#])/i.test(url) || /mpegurl/i.test(station.codec || "");
+        if (isHls && typeof Hls !== "undefined" && Hls.isSupported()) {
+          hls = new Hls({ enableWorker: true });
+          hls.loadSource(url);
+          hls.attachMedia(audio);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => startAudio());
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (data.fatal) {
+              setStatus("Stream unavailable. Try another station.", true);
+              setPlaying(false);
+            }
+          });
+        } else {
+          audio.src = url;
+          await startAudio();
+        }
+      }
+
+      async function startAudio() {
+        try {
+          await audio.play();
+          setStatus("ON AIR · LIVE");
+          setPlaying(true);
+          document.getElementById("headerStatus").textContent = "On air";
+        } catch (error) {
+          setStatus("Playback blocked or stream unavailable. Press play to retry.", true);
+          setPlaying(false);
+          console.warn("Station playback did not start.", error);
+        }
+      }
+
+      async function fetchStations(name = "") {
+        const sequence = ++requestSequence;
+        const params = new URLSearchParams({
+          hidebroken: "true",
+          lastcheckok: "1",
+          ssl_error: "0",
+          order: "clickcount",
+          reverse: "true",
+          limit: name ? "100" : "1000"
+        });
+        if (name) params.set("name", name);
+        try {
+          const response = await fetch(`${API}?${params.toString()}`, { headers: { Accept: "application/json" } });
+          if (!response.ok) throw new Error(`Radio Browser returned HTTP ${response.status}`);
+          const data = await response.json();
+          if (!Array.isArray(data)) throw new Error("Radio Browser returned an unexpected response.");
+          if (sequence !== requestSequence) return;
+          for (const station of data) {
+            if (!isVerifiedHttps(station)) continue;
+            const id = stationId(station);
+            if (!id) continue;
+            stationMap.set(id, station);
+          }
+          allStations = [...stationMap.values()];
+          updateCountryOptions();
+          renderStations();
+          updateGlobe();
+          document.getElementById("headerStatus").textContent = `${allStations.length.toLocaleString()} verified stations`;
+        } catch (error) {
+          if (sequence !== requestSequence) return;
+          console.error("Could not load radio stations.", error);
+          document.getElementById("headerStatus").textContent = "Directory unavailable";
+          if (!allStations.length) {
+            listElement.innerHTML = "";
+            const message = document.createElement("div");
+            message.className = "grid min-h-36 place-items-center px-5 text-center text-sm text-rose-300";
+            message.textContent = "Could not reach Radio Browser. Check your connection and refresh to retry.";
+            listElement.append(message);
+          }
+        }
+      }
+
+      function initGlobe() {
+        if (typeof Globe !== "function") {
+          document.getElementById("globeViz").innerHTML = '<div class="grid h-full place-items-center text-sm text-slate-500">The interactive globe could not be loaded.</div>';
+          return;
+        }
+        globe = Globe()(document.getElementById("globeViz"))
+          .backgroundColor("rgba(0,0,0,0)")
+          .globeImageUrl("https://unpkg.com/three-globe/example/img/earth-night.jpg")
+          .showAtmosphere(true)
+          .atmosphereColor("#55d6b3")
+          .atmosphereAltitude(0.16)
+          .pointResolution(8)
+          .pointsData([])
+          .pointLat("lat")
+          .pointLng("lng")
+          .pointAltitude(0.04)
+          .pointRadius(0.25)
+          .pointColor(() => "#7ce6c2")
+          .pointLabel(point => escapeHtml(point.station.name || "Radio station"))
+          .onPointClick(point => playStation(point.station));
+        globe.controls().autoRotate = true;
+        globe.controls().autoRotateSpeed = 0.28;
+        globe.controls().enableDamping = true;
+        globe.controls().dampingFactor = 0.08;
+        globe.pointOfView({ lat: 20, lng: 0, altitude: 2.3 });
+        const resize = () => {
+          const target = document.getElementById("globeViz");
+          globe.width(target.clientWidth);
+          globe.height(target.clientHeight);
+        };
+        window.addEventListener("resize", resize);
+        resize();
+      }
+
+      searchInput.addEventListener("input", () => {
+        renderStations();
+        clearTimeout(searchTimer);
+        const query = searchInput.value.trim();
+        if (query.length >= 2) searchTimer = setTimeout(() => fetchStations(query), 450);
+      });
+      countrySelect.addEventListener("change", renderStations);
+      tamilToggle.addEventListener("click", () => {
+        tamilOnly = !tamilOnly;
+        tamilToggle.setAttribute("aria-pressed", String(tamilOnly));
+        tamilToggle.classList.toggle("border-emerald-300/50", tamilOnly);
+        tamilToggle.classList.toggle("text-emerald-200", tamilOnly);
+        renderStations();
+      });
+      favoritesToggle.addEventListener("click", () => {
+        favoritesOnly = !favoritesOnly;
+        favoritesToggle.setAttribute("aria-pressed", String(favoritesOnly));
+        favoritesToggle.classList.toggle("border-pink-300/50", favoritesOnly);
+        favoritesToggle.classList.toggle("text-pink-200", favoritesOnly);
+        renderStations();
+      });
+      playButton.addEventListener("click", async () => {
+        if (!currentStation) {
+          setStatus("Choose a station to start listening.");
+          return;
+        }
+        if (audio.paused) await playStation(currentStation);
+        else audio.pause();
+      });
+      audio.addEventListener("playing", () => { setPlaying(true); setStatus("ON AIR · LIVE"); });
+      audio.addEventListener("pause", () => setPlaying(false));
+      audio.addEventListener("error", () => {
+        if (currentStation) setStatus("Stream unavailable. Try another station.", true);
+        setPlaying(false);
+      });
+      document.getElementById("volume").addEventListener("input", event => {
+        audio.volume = Number(event.target.value);
+        document.getElementById("volumeLabel").textContent = `${Math.round(audio.volume * 100)}%`;
+      });
+      audio.volume = 0.7;
+      initGlobe();
+      fetchStations();
+    })();
+  </script>
+</body>
+</html>
